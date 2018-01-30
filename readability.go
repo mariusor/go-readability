@@ -21,10 +21,10 @@ var (
 
 	blacklistCandidatesRegexp  = regexp.MustCompile(`(?i)popupbody`)
 	okMaybeItsACandidateRegexp = regexp.MustCompile(`(?i)and|article|body|column|main|shadow`)
-	unlikelyCandidatesRegexp   = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup`)
+	unlikelyCandidatesRegexp   = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup|share`)
 	divToPElementsRegexp       = regexp.MustCompile(`(?i)<(a|dl|div|ol|pre|table|ul|header|footer|article)`)
 
-	okMaybeItsAHeaderFooterRegexp = regexp.MustCompile(`(?i)(header|footer)`)
+	okMaybeItsAHeaderFooterRegexp = regexp.MustCompile(`(?i)(header|footer|h1|h2|h3|h4|h5|h6)`)
 
 	negativeRegexp = regexp.MustCompile(`(?i)combx|comment|com-|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget`)
 	positiveRegexp = regexp.MustCompile(`(?i)article|body|content|entry|hentry|main|page|pagination|post|text|blog|story`)
@@ -33,8 +33,9 @@ var (
 
 	sentenceRegexp = regexp.MustCompile(`\.( |$)`)
 
-	normalizeWhitespaceRegexp     = regexp.MustCompile(`[\r\n\f ]+`)
-	normalizeHtmlWhiteSpaceRegexp = regexp.MustCompile(`(&(nbsp);)+`)
+	normalizeWhitespaceRegexp     = regexp.MustCompile(`[\t ]+`)
+	normalizeEOLRegexp            = regexp.MustCompile(`[\r\n\f]+`)
+	normalizeHtmlWhiteSpaceRegexp = regexp.MustCompile(`(&nbsp;)+`)
 )
 
 type candidate struct {
@@ -196,13 +197,13 @@ func (d *Document) getArticle() string {
 	siblingScoreThreshold := float32(math.Max(10, float64(d.bestCandidate.score*.2)))
 
 	d.bestCandidate.selection.Siblings().Union(d.bestCandidate.selection).Each(func(i int, s *goquery.Selection) {
-		appnd := false
+		append := false
 		n := s.Get(0)
 
 		if n == d.bestCandidate.Node() {
-			appnd = true
+			append = true
 		} else if c, ok := d.candidates[n]; ok && c.score >= siblingScoreThreshold {
-			appnd = true
+			append = true
 		}
 
 		if s.Is("p") {
@@ -211,13 +212,13 @@ func (d *Document) getArticle() string {
 			contentLength := len(content)
 
 			if contentLength >= 80 && linkDensity < .25 {
-				appnd = true
+				append = true
 			} else if contentLength < 80 && linkDensity == 0 {
-				appnd = sentenceRegexp.MatchString(content)
+				append = sentenceRegexp.MatchString(content)
 			}
 		}
 
-		if appnd {
+		if append {
 			tag := "div"
 			if s.Is("p") {
 				tag = n.Data
@@ -296,7 +297,7 @@ func (d *Document) scoreParagraphs(minimumTextLength int) {
 
 		contentScore := float32(1.0)
 		contentScore += float32(strings.Count(text, ",") + 1)
-		contentScore += float32(math.Min(float64(len(text)/100.0), 3))
+		contentScore += float32(math.Min(float64(int(len(text)/100.0)), 3))
 
 		candidates[parentNode].score += contentScore
 		if grandparentNode != nil {
@@ -530,7 +531,7 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 			} else if counts["li"] > counts["p"] && !s.Is("ul,ol") {
 				reason = "more <li>s than <p>s"
 				remove = true
-			} else if counts["input"] > counts["p"]/3.0 {
+			} else if counts["input"] > int(counts["p"]/3.0) {
 				reason = "less than 3x <p>s than <input>s"
 				remove = true
 			} else if contentLength < d.MinTextLength && (counts["img"] == 0 || counts["img"] > 2) {
@@ -600,6 +601,7 @@ func replaceNodeWithChildren(n *html.Node) {
 func sanitizeWhitespace(text string) string {
 	text = normalizeHtmlWhiteSpaceRegexp.ReplaceAllString(text, " ")
 	text = normalizeWhitespaceRegexp.ReplaceAllString(text, " ")
+	text = normalizeEOLRegexp.ReplaceAllString(text, "\n")
 	text = strings.TrimSpace(text)
 	return text
 }
