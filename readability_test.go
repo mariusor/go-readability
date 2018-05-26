@@ -1,9 +1,10 @@
 package readability
 
 import (
+	"bufio"
 	"io/ioutil"
-	//"log"
-	//"os"
+	"log"
+	"os"
 	"strings"
 	"testing"
 )
@@ -13,7 +14,7 @@ type expectedOutput struct {
 	excludedFragments []string
 }
 
-func TestGeneralFunctionality(t *testing.T) {
+func _TestGeneralFunctionality(t *testing.T) {
 	html := `<html><head><title>title!</title></head><body><div><p>Some content</p></div></body>`
 	doc, err := NewDocument(html)
 	if err != nil {
@@ -42,7 +43,7 @@ func TestGeneralFunctionality(t *testing.T) {
 	}
 }
 
-func TestIgnoringSidebars(t *testing.T) {
+func _TestIgnoringSidebars(t *testing.T) {
 	html := `html><head><title>title!</title></head><body><div><p>Some content</p></div><div class='sidebar'><p>sidebar<p></div></body>`
 	doc, err := NewDocument(html)
 	if err != nil {
@@ -58,7 +59,7 @@ func TestIgnoringSidebars(t *testing.T) {
 	}
 }
 
-func TestInsertSpaceForBlockElements(t *testing.T) {
+func _TestInsertSpaceForBlockElements(t *testing.T) {
 	html := `<html><head><title>title!</title></head>
           <body>
             <div>
@@ -78,7 +79,7 @@ func TestInsertSpaceForBlockElements(t *testing.T) {
 	}
 }
 
-func TestOutputForWellKnownDocuments(t *testing.T) {
+func _TestOutputForWellKnownDocuments(t *testing.T) {
 	inputs := map[string]*expectedOutput{
 		"blogpost_with_links.html": {
 			requiredFragments: []string{
@@ -155,7 +156,6 @@ func TestOutputForWellKnownDocuments(t *testing.T) {
 		},
 	}
 
-	//Logger = log.New(os.Stdout, "[readability] ", log.LstdFlags)
 	for file, expectedOutput := range inputs {
 		bytes, err := ioutil.ReadFile("test_fixtures/" + file)
 		if err != nil {
@@ -184,6 +184,39 @@ func TestOutputForWellKnownDocuments(t *testing.T) {
 				t.Errorf("Did not expect content %q to contain %q", file, excluded)
 			}
 		}
+	}
+}
+
+func TestOutput(t *testing.T) {
+	Logger = log.New(os.Stdout, "[readability] ", log.LstdFlags)
+	inputs := []string{"parahumans-chap1.html"}
+
+	for _, file := range inputs {
+		bytes, err := ioutil.ReadFile("test_fixtures/" + file)
+		if err != nil {
+			t.Fatal("Unable to read file test_fixtures/", file, err)
+		}
+
+		input := string(bytes)
+		doc, err1 := NewDocument(input)
+		if err1 != nil {
+			t.Fatal("Unable to create document", err1)
+		}
+
+		content := doc.Content()
+
+		f, err2 := os.Create("test_fixtures/readable-" + file)
+		if err2 != nil {
+			t.Fatal("Unable to create document", err2)
+		}
+
+		w := bufio.NewWriter(f)
+		_, err3 := w.WriteString(content)
+		if err3 != nil {
+			t.Fatal("Unable to write document", err3)
+		}
+
+		w.Flush()
 	}
 }
 
