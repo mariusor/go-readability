@@ -22,7 +22,7 @@ var (
 	blacklistCandidatesRegexp  = regexp.MustCompile(`(?i)popupbody`)
 	okMaybeItsACandidateRegexp = regexp.MustCompile(`(?i)and|article|body|column|main|shadow`)
 	unlikelyCandidatesRegexp   = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup|share`)
-	divToPElementsRegexp       = regexp.MustCompile(`(?i)<(a|dl|div|ol|pre|table|ul|header|footer|article)`)
+	divToPElementsRegexp       = regexp.MustCompile(`(?i)<(dl|div|ol|pre|table|ul|header|footer|article)`)
 
 	okMaybeItsAHeaderFooterRegexp = regexp.MustCompile(`(?i)(header|footer|h1|h2|h3|h4|h5|h6)`)
 
@@ -55,6 +55,7 @@ type Document struct {
 	bestCandidate *candidate
 
 	Title                    string
+	EnsureTitleInArticle     bool
 	RemoveUnlikelyCandidates bool
 	WeightClasses            bool
 	CleanConditionally       bool
@@ -189,7 +190,7 @@ func (d *Document) selectBestCandidate() {
 }
 
 func (d *Document) getTitle() string {
-	return d.document.Find("head title").First().Text()
+	return strings.TrimSpace(d.document.Find("head title").First().Text())
 }
 
 func (d *Document) getArticle() string {
@@ -210,8 +211,11 @@ func (d *Document) getArticle() string {
 
 		if s.Is("p") {
 			linkDensity := d.getLinkDensity(s)
-			content := s.Text()
+			content := strings.TrimSpace(s.Text())
 			contentLength := len(content)
+			if contentLength == 0 {
+				return
+			}
 
 			if contentLength >= 80 && linkDensity < .25 {
 				append = true
@@ -227,6 +231,11 @@ func (d *Document) getArticle() string {
 			}
 
 			html, _ := s.Html()
+			html = strings.TrimSpace(html)
+			if len(html) == 0 {
+				return
+			}
+
 			_, _ = fmt.Fprintf(output, "<%s>%s</%s>", tag, html, tag)
 		}
 	})
@@ -437,6 +446,31 @@ func (d *Document) sanitize(article string) string {
 		delete(replaceWithWhitespace, tag)
 	}
 
+	if d.EnsureTitleInArticle {
+		top := s.Find("h1").First()
+		missingTitle := top.Length() == 0
+		if missingTitle {
+			maybeMissingTitle, maybeTitle := topLineMaybeIsTitle(top, d.Title)
+			titText := &html.Node{
+				Type:        html.TextNode,
+				Data:        d.Title,
+			}
+			h1Title := &html.Node{
+				Type:        html.ElementNode,
+				Data:        "h1",
+			}
+			h1Title.AppendChild(titText)
+			if maybeMissingTitle {
+				html, err := top.Html()
+				if err != nil {
+					log.Print(err.Error())
+				}
+				top.SetHtml(strings.Replace(html, maybeTitle, "", 1))
+			}
+			top.ReplaceWithNodes(h1Title)
+		}
+	}
+
 	var text string
 
 	s.Find("*").Each(func(i int, s *goquery.Selection) {
@@ -622,4 +656,58 @@ func sanitizeWhitespace(text string) string {
 	text = normalizeEOLRegexp.ReplaceAllString(text, "\n")
 	text = strings.TrimSpace(text)
 	return text
+}
+
+func levenshtein(str1, str2 []rune) int {
+	s1len := len(str1)
+	s2len := len(str2)
+	column := make([]int, len(str1)+1)
+
+	for y := 1; y <= s1len; y++ {
+		column[y] = y
+	}
+	for x := 1; x <= s2len; x++ {
+		column[0] = x
+		lastkey := x - 1
+		for y := 1; y <= s1len; y++ {
+			oldkey := column[y]
+			var incr int
+			if str1[y-1] != str2[x-1] {
+				incr = 1
+			}
+
+			column[y] = minimum(column[y]+1, column[y-1]+1, lastkey+incr)
+			lastkey = oldkey
+		}
+	}
+	return column[s1len]
+}
+
+func minimum(a, b, c int) int {
+	if a < b {
+		if a < c {
+			return a
+		}
+	} else {
+		if b < c {
+			return b
+		}
+	}
+	return c
+}
+
+func topLineMaybeIsTitle (s *goquery.Selection, t string) (bool, string) {
+	lines := strings.SplitN(s.Text(), "\n", 10)
+	for _, line := range lines {
+		lineLength := len(line)
+		if lineLength == 0 {
+			continue
+		}
+		if lineLength < len(t) {
+			if levenshtein([]rune(line), []rune(t[:lineLength])) == 0 {
+				return true, line
+			}
+		}
+	}
+	return false, ""
 }
