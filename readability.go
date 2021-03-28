@@ -443,8 +443,12 @@ func (d *Document) sanitize(article string) string {
 	if d.EnsureTitleInArticle {
 		top := s.Find("h1").First()
 		missingTitle := top.Length() == 0
+		maybeMissingTitle, maybeTitle := topLineMaybeIsTitle(top, d.Title)
+
 		if missingTitle {
-			maybeMissingTitle, maybeTitle := topLineMaybeIsTitle(top, d.Title)
+			top = s.Find("p").First()
+		}
+		if missingTitle || maybeMissingTitle {
 			titText := &html.Node{
 				Type:        html.TextNode,
 				Data:        d.Title,
@@ -460,8 +464,10 @@ func (d *Document) sanitize(article string) string {
 					log.Print(err.Error())
 				}
 				top.SetHtml(strings.Replace(html, maybeTitle, "", 1))
+				top.ReplaceWithNodes(h1Title)
+			} else {
+				top.PrependNodes(h1Title)
 			}
-			top.ReplaceWithNodes(h1Title)
 		}
 	}
 
