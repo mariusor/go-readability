@@ -55,6 +55,7 @@ type Document struct {
 	bestCandidate *candidate
 
 	Title                    string
+	EnsureTitleInArticle     bool
 	RemoveUnlikelyCandidates bool
 	WeightClasses            bool
 	CleanConditionally       bool
@@ -184,12 +185,11 @@ func (d *Document) selectBestCandidate() {
 }
 
 func (d *Document) getTitle() string {
-	return d.document.Find("head title").First().Text()
+	return strings.TrimSpace(d.document.Find("head title").First().Text())
 }
 
 func (d *Document) getArticle() string {
-	//output := bytes.NewBufferString("<div>")
-	output := bytes.NewBufferString("")
+	output := new(bytes.Buffer)
 
 	siblingScoreThreshold := float32(math.Max(10, float64(d.bestCandidate.score*.2)))
 
@@ -205,8 +205,11 @@ func (d *Document) getArticle() string {
 
 		if s.Is("p") {
 			linkDensity := d.getLinkDensity(s)
-			content := s.Text()
+			content := strings.TrimSpace(s.Text())
 			contentLength := len(content)
+			if contentLength == 0 {
+				return
+			}
 
 			if contentLength >= 80 && linkDensity < .25 {
 				append = true
@@ -222,6 +225,10 @@ func (d *Document) getArticle() string {
 			}
 
 			html, _ := s.Html()
+			html = strings.TrimSpace(html)
+			if len(html) == 0 {
+				return
+			}
 
 			fmt.Fprintf(output, "<%s>%s</%s>\n", tag, html, tag)
 		}
@@ -408,21 +415,21 @@ func (d *Document) sanitize(article string) string {
 
 	// we'll sanitize all elements using a whitelist
 	replaceWithWhitespace := map[string]bool{
-		//"br":         true,
-		//"hr":         true,
-		//"h1":         true,
-		//"h2":         true,
-		//"h3":         true,
-		//"h4":         true,
-		//"h5":         true,
-		//"h6":         true,
+		"br":         true,
+		"hr":         true,
+		"h1":         true,
+		"h2":         true,
+		"h3":         true,
+		"h4":         true,
+		"h5":         true,
+		"h6":         true,
 		"dl":      true,
 		"dd":      true,
 		"ol":      true,
 		"li":      true,
 		"ul":      true,
 		"address": true,
-		//"blockquote": true,
+		"blockquote": true,
 		"center": true,
 	}
 
@@ -431,6 +438,31 @@ func (d *Document) sanitize(article string) string {
 		tag = strings.ToLower(tag)
 		whitelist[tag] = true
 		delete(replaceWithWhitespace, tag)
+	}
+
+	if d.EnsureTitleInArticle {
+		top := s.Find("h1").First()
+		missingTitle := top.Length() == 0
+		if missingTitle {
+			maybeMissingTitle, maybeTitle := topLineMaybeIsTitle(top, d.Title)
+			titText := &html.Node{
+				Type:        html.TextNode,
+				Data:        d.Title,
+			}
+			h1Title := &html.Node{
+				Type:        html.ElementNode,
+				Data:        "h1",
+			}
+			h1Title.AppendChild(titText)
+			if maybeMissingTitle {
+				html, err := top.Html()
+				if err != nil {
+					log.Print(err.Error())
+				}
+				top.SetHtml(strings.Replace(html, maybeTitle, "", 1))
+			}
+			top.ReplaceWithNodes(h1Title)
+		}
 	}
 
 	var text string
@@ -614,4 +646,58 @@ func sanitizeWhitespace(text string) string {
 	text = normalizeEOLRegexp.ReplaceAllString(text, "\n")
 	text = strings.TrimSpace(text)
 	return text
+}
+
+func levenshtein(str1, str2 []rune) int {
+	s1len := len(str1)
+	s2len := len(str2)
+	column := make([]int, len(str1)+1)
+
+	for y := 1; y <= s1len; y++ {
+		column[y] = y
+	}
+	for x := 1; x <= s2len; x++ {
+		column[0] = x
+		lastkey := x - 1
+		for y := 1; y <= s1len; y++ {
+			oldkey := column[y]
+			var incr int
+			if str1[y-1] != str2[x-1] {
+				incr = 1
+			}
+
+			column[y] = minimum(column[y]+1, column[y-1]+1, lastkey+incr)
+			lastkey = oldkey
+		}
+	}
+	return column[s1len]
+}
+
+func minimum(a, b, c int) int {
+	if a < b {
+		if a < c {
+			return a
+		}
+	} else {
+		if b < c {
+			return b
+		}
+	}
+	return c
+}
+
+func topLineMaybeIsTitle (s *goquery.Selection, t string) (bool, string) {
+	lines := strings.SplitN(s.Text(), "\n", 10)
+	for _, line := range lines {
+		lineLength := len(line)
+		if lineLength == 0 {
+			continue
+		}
+		if lineLength < len(t) {
+			if levenshtein([]rune(line), []rune(t[:lineLength])) == 0 {
+				return true, line
+			}
+		}
+	}
+	return false, ""
 }
