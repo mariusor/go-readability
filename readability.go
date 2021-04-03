@@ -194,8 +194,7 @@ func (d *Document) getTitle() string {
 }
 
 func (d *Document) getArticle() string {
-	//output := bytes.NewBufferString("<div>")
-	output := bytes.NewBufferString("")
+	output := new(bytes.Buffer)
 
 	siblingScoreThreshold := float32(math.Max(10, float64(d.bestCandidate.score*.2)))
 
@@ -236,7 +235,7 @@ func (d *Document) getArticle() string {
 				return
 			}
 
-			_, _ = fmt.Fprintf(output, "<%s>%s</%s>", tag, html, tag)
+			_, _ = fmt.Fprintf(output, "<%s>%s</%s>\n", tag, html, tag)
 		}
 	})
 
@@ -447,12 +446,12 @@ func (d *Document) sanitize(article string) string {
 	}
 
 	if d.EnsureTitleInArticle {
-		top := s.Find("h1").First()
+		top := doc.Find("h1").First()
 		missingTitle := top.Length() == 0
 		maybeMissingTitle, maybeTitle := topLineMaybeIsTitle(top, d.Title)
 
 		if missingTitle {
-			top = s.Find("p").First()
+			top = doc.Find("p").First()
 		}
 		if missingTitle || maybeMissingTitle {
 			titText := &html.Node{
@@ -532,19 +531,21 @@ func (d *Document) sanitize(article string) string {
 		text, _ = doc.Html()
 	}
 
-	text = addTitle(d.Title, text)
+	text = addTitle(d.Title, doc)
 	return sanitizeWhitespace(text)
 }
 
-func addTitle(title string, html string) string {
-	var htmlTitle bytes.Buffer
-	old := "<head></head>"
-
-	htmlTitle.WriteString("<head><title>")
-	htmlTitle.WriteString(title)
-	htmlTitle.WriteString("</title></head>")
-
-	return strings.Replace(html, old, htmlTitle.String(), 1)
+func addTitle(title string, doc *goquery.Document) {
+	titText := &html.Node{
+		Type:        html.TextNode,
+		Data:        title,
+	}
+	titNode := &html.Node{
+		Type:        html.ElementNode,
+		Data:        "title",
+	}
+	titNode.AppendChild(titText)
+	doc.Find("head").AppendNodes(titNode)
 }
 
 func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
@@ -563,6 +564,7 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 
 		if weight+contentScore < 0 {
 			Logger.Printf("Conditionally cleaned %s%s with weight %f and content score %f\n", node.Data, getName(s), weight, contentScore)
+			Logger.Printf("%s\n", s.Text())
 			removeNodes(s)
 			return
 		}
