@@ -31,7 +31,8 @@ var (
 
 	stripCommentRegexp = regexp.MustCompile(`(?s)\<\!\-{2}.+?-{2}\>`)
 
-	sentenceRegexp = regexp.MustCompile(`\.( |$)`)
+	sentenceRegexp    = regexp.MustCompile(`\.( |$)`)
+	unlikelySentences = regexp.MustCompile(`(?i)previous|next|published|bookmark|permalink`)
 
 	normalizeWhitespaceRegexp     = regexp.MustCompile(`[\t ]+`)
 	normalizeEOLRegexp            = regexp.MustCompile(`[\r\n\f]+`)
@@ -406,6 +407,8 @@ func (d *Document) sanitize(article string) string {
 		removeNodes(s)
 	})
 
+	d.cleanConditionally(s, "p")
+
 	if d.RemoveEmptyNodes {
 		s.Find("p").Each(func(i int, s *goquery.Selection) {
 			html, _ := s.Html()
@@ -455,12 +458,12 @@ func (d *Document) sanitize(article string) string {
 		}
 		if missingTitle || maybeMissingTitle {
 			titText := &html.Node{
-				Type:        html.TextNode,
-				Data:        d.Title,
+				Type: html.TextNode,
+				Data: d.Title,
 			}
 			h1Title := &html.Node{
-				Type:        html.ElementNode,
-				Data:        "h1",
+				Type: html.ElementNode,
+				Data: "h1",
 			}
 			h1Title.AppendChild(titText)
 			if maybeMissingTitle {
@@ -537,12 +540,12 @@ func (d *Document) sanitize(article string) string {
 
 func addTitle(title string, doc *goquery.Document) {
 	titText := &html.Node{
-		Type:        html.TextNode,
-		Data:        title,
+		Type: html.TextNode,
+		Data: title,
 	}
 	titNode := &html.Node{
-		Type:        html.ElementNode,
-		Data:        "title",
+		Type: html.ElementNode,
+		Data: "title",
 	}
 	titNode.AppendChild(titText)
 	doc.Find("head").AppendNodes(titNode)
@@ -605,6 +608,10 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 				remove = true
 			} else if (counts["embed"] == 1 && contentLength < 75) || counts["embed"] > 1 {
 				reason = "<embed>s with too short a content length, or too many <embed>s"
+				remove = true
+			}
+			if unlikelySentences.MatchString(text) && contentLength < d.MinTextLength {
+				reason = "short text contains unlikely words"
 				remove = true
 			}
 
@@ -704,7 +711,7 @@ func minimum(a, b, c int) int {
 	return c
 }
 
-func topLineMaybeIsTitle (s *goquery.Selection, t string) (bool, string) {
+func topLineMaybeIsTitle(s *goquery.Selection, t string) (bool, string) {
 	lines := strings.SplitN(s.Text(), "\n", 10)
 	for _, line := range lines {
 		lineLength := len(line)
