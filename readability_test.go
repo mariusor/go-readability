@@ -1,9 +1,7 @@
 package readability
 
 import (
-	"io/ioutil"
-	//"log"
-	//"os"
+	"os"
 	"strings"
 	"testing"
 )
@@ -29,7 +27,7 @@ func TestGeneralFunctionality(t *testing.T) {
 		t.Errorf("Expected content %q to match %q", content, expectedContent)
 	}
 
-	const expectedHTML = "<div><div><p>Some content</p></div></div>"
+	const expectedHTML = "<div><p><p>Some content</p></p></div>\n"
 	if source != expectedHTML {
 		t.Errorf("Expected source %q to match %q", source, expectedHTML)
 	}
@@ -142,7 +140,7 @@ func TestOutputForWellKnownDocuments(t *testing.T) {
 				"Latest videos",
 			},
 		},
-		"parahumans-chap1.html": &expectedOutput{
+		"parahumans-chap1.html": {
 			requiredFragments: []string{
 				"⊙",
 				//"Daybreak – 1.1",
@@ -157,7 +155,7 @@ func TestOutputForWellKnownDocuments(t *testing.T) {
 
 	//Logger = log.New(os.Stdout, "[readability] ", log.LstdFlags)
 	for file, expectedOutput := range inputs {
-		bytes, err := ioutil.ReadFile("test_fixtures/" + file)
+		bytes, err := os.ReadFile("test_fixtures/" + file)
 		if err != nil {
 			t.Fatal("Unable to read file test_fixtures/", file, err)
 		}

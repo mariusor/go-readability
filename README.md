@@ -2,9 +2,11 @@
 
 go-readability is library for extracting the main content off of an HTML page. This library implements the readability algorithm created by arc90 labs and was heavily inspired by https://github.com/cantino/ruby-readability.
 
+This is a fork of [GoReadability from Mauidude](https://github.com/mariusor/go-readability). It contains some additions I required for my own usage.
+
 ## Installation
 
-`go install github.com/mauidude/go-readability`
+`go install github.com/mariusor/go-readability`
 
 ## CLI Tool
 
@@ -24,7 +26,7 @@ $ readability --help
 
 ```
 import(
-  "github.com/mauidude/go-readability"
+  "github.com/mariusor/go-readability"
 )
 
 ...
@@ -43,4 +45,4 @@ content := doc.Content()
 ## Tests
 
 To run tests
-`go test github.com/mauidude/go-readability`
+`go test github.com/mariusor/go-readability`

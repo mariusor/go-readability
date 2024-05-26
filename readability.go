@@ -3,8 +3,9 @@ package readability
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
+	"log/slog"
 	"math"
 	"regexp"
 	"strings"
@@ -14,7 +15,9 @@ import (
 )
 
 var (
-	Logger = log.New(ioutil.Discard, "[readability] ", log.LstdFlags)
+	Logger = slog.New(
+		slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}).WithGroup("[readability]"),
+	)
 
 	replaceBrsRegexp   = regexp.MustCompile(`(?i)(<br[^>]*>[ \n\r\t]*){2,}`)
 	replaceFontsRegexp = regexp.MustCompile(`(?i)<(\/?)\s*font[^>]*?>`)
@@ -136,7 +139,10 @@ func (d *Document) ContentWithHTML() (content string, html string) {
 			}
 
 			if retry {
-				Logger.Printf("Retrying with length %d < retry length %d\n", length, d.RetryLength)
+				Logger.With(
+					slog.Int("length", length),
+					slog.Int("retry", d.RetryLength),
+				).Debug("Retrying due to length smaller than retry")
 				_ = d.initializeHtml(d.input)
 				articleText, _ = d.ContentWithHTML()
 			}
@@ -159,7 +165,7 @@ var (
 
 func (d *Document) prepareCandidates() {
 	d.document.Find(strings.Join(noContentTags, ",")).Each(func(i int, s *goquery.Selection) {
-		Logger.Printf("Removing no content tag - %s\n", getName(s))
+		Logger.With(slog.String("tag", getName(s))).Debug("Removing no content tag")
 		removeNodes(s)
 	})
 
@@ -197,7 +203,7 @@ func (d *Document) getTitle() string {
 func (d *Document) getArticle() string {
 	output := new(bytes.Buffer)
 
-	siblingScoreThreshold := float32(math.Max(10, float64(d.bestCandidate.score*.2)))
+	siblingScoreThreshold := float32(math.Max(float64(10), float64(d.bestCandidate.score*.2)))
 
 	d.bestCandidate.selection.Siblings().Union(d.bestCandidate.selection).Each(func(i int, s *goquery.Selection) {
 		append := false
@@ -240,8 +246,6 @@ func (d *Document) getArticle() string {
 		}
 	})
 
-	//output.Write([]byte("</div>"))
-
 	return output.String()
 }
 
@@ -253,7 +257,7 @@ func (d *Document) removeUnlikelyCandidates() {
 		str := class + id
 
 		if blacklistCandidatesRegexp.MatchString(str) || (unlikelyCandidatesRegexp.MatchString(str) && !okMaybeItsACandidateRegexp.MatchString(str) && !okMaybeItsAHeaderFooterRegexp.MatchString(goquery.NodeName(s))) {
-			Logger.Printf("Removing unlikely candidate - %s\n", getName(s))
+			Logger.With(slog.String("tag", getName(s))).Debug("Removing unlikely candidate")
 			removeNodes(s)
 		}
 	})
@@ -263,13 +267,13 @@ func (d *Document) transformMisusedDivsIntoParagraphs() {
 	d.document.Find("header,footer,article,div").Each(func(i int, s *goquery.Selection) {
 		html, err := s.Html()
 		if err != nil {
-			Logger.Printf("Unable to transform div to p %s\n", err)
+			Logger.With(slog.String("error", err.Error())).Warn("Unable to transform 'div' to 'p'")
 			return
 		}
 
 		// transform <div>s that do not contain other block elements into <p>s
 		if !divToPElementsRegexp.MatchString(html) {
-			Logger.Printf("Altering %s to p\n", getName(s))
+			Logger.With(slog.String("tag", getName(s))).Debug("Altering tag to 'p'")
 
 			node := s.Get(0)
 			node.Data = "p"
@@ -383,37 +387,37 @@ func (d *Document) scoreNode(s *goquery.Selection) *candidate {
 }
 
 var (
-	headerTags []string = []string{"h1", "h2", "h3", "h4", "h5", "h6"}
+	headerTags = []string{"h1", "h2", "h3", "h4", "h5", "h6"}
 )
 
 func (d *Document) sanitize(article string) string {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(article))
 	d.Title = d.getTitle()
 	if err != nil {
-		Logger.Println("Unable to create document", err)
+		Logger.With(slog.String("error", err.Error())).Warn("Unable to create document")
 		return ""
 	}
 
 	s := doc.Find("body")
 	s.Find(strings.Join(headerTags, ",")).Each(func(i int, header *goquery.Selection) {
 		if d.classWeight(header) < 0 || d.getLinkDensity(header) > 0.33 {
-			Logger.Printf("Removing tag - %s\n", getName(header))
+			Logger.With(slog.String("tag", getName(header))).Debug("Removing tag")
 			removeNodes(header)
 		}
 	})
 
 	s.Find("input,select,textarea,button,object,iframe,embed").Each(func(i int, s *goquery.Selection) {
-		Logger.Printf("Removing non-content tag - %s\n", getName(s))
+		Logger.With(slog.String("tag", getName(s))).Debug("Removing non-content tag")
 		removeNodes(s)
 	})
 
-	d.cleanConditionally(s, "p")
+	//d.cleanConditionally(s, "p")
 
 	if d.RemoveEmptyNodes {
 		s.Find("p").Each(func(i int, s *goquery.Selection) {
 			html, _ := s.Html()
 			if len(strings.TrimSpace(html)) == 0 {
-				Logger.Printf("Removing empty node - %s\n", getName(s))
+				Logger.With(slog.String("tag", getName(s))).Debug("Removing empty node")
 				removeNodes(s)
 			}
 		})
@@ -423,22 +427,22 @@ func (d *Document) sanitize(article string) string {
 
 	// we'll sanitize all elements using a whitelist
 	replaceWithWhitespace := map[string]bool{
-		//"br":         true,
-		//"hr":         true,
-		//"h1":         true,
-		//"h2":         true,
-		//"h3":         true,
-		//"h4":         true,
-		//"h5":         true,
-		//"h6":         true,
-		"dl":      true,
-		"dd":      true,
-		"ol":      true,
-		"li":      true,
-		"ul":      true,
-		"address": true,
-		//"blockquote": true,
-		"center": true,
+		"br":         true,
+		"hr":         true,
+		"h1":         true,
+		"h2":         true,
+		"h3":         true,
+		"h4":         true,
+		"h5":         true,
+		"h6":         true,
+		"dl":         true,
+		"dd":         true,
+		"ol":         true,
+		"li":         true,
+		"ul":         true,
+		"address":    true,
+		"blockquote": true,
+		"center":     true,
 	}
 
 	whitelist := make(map[string]bool)
@@ -530,11 +534,12 @@ func (d *Document) sanitize(article string) string {
 		}
 	})
 
+	addTitle(d.Title, doc)
+
 	if text == "" {
 		text, _ = doc.Html()
 	}
 
-	text = addTitle(d.Title, doc)
 	return sanitizeWhitespace(text)
 }
 
@@ -566,8 +571,13 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 		}
 
 		if weight+contentScore < 0 {
-			Logger.Printf("Conditionally cleaned %s%s with weight %f and content score %f\n", node.Data, getName(s), weight, contentScore)
-			Logger.Printf("%s\n", s.Text())
+			Logger.With(
+				slog.String("text", s.Text()),
+				slog.String("tag", getName(s)),
+				slog.String("node", node.Data),
+				slog.Float64("weight", float64(weight)),
+				slog.Float64("score", float64(contentScore)),
+			).Debug("Conditionally cleaned node due to weight and content score")
 			removeNodes(s)
 			return
 		}
@@ -616,7 +626,14 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 			}
 
 			if remove {
-				Logger.Printf("Conditionally cleaned %s with weight %f and content score %f because it has %s\n", getName(s), weight, contentScore, reason)
+				Logger.With(
+					slog.String("text", s.Text()),
+					slog.String("tag", getName(s)),
+					slog.String("node", node.Data),
+					slog.Float64("weight", float64(weight)),
+					slog.Float64("score", float64(contentScore)),
+					slog.String("reason", reason),
+				).Debug("Conditionally cleaned node due to reason")
 				removeNodes(s)
 			}
 		}

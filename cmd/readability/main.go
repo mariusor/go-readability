@@ -2,10 +2,9 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 
-	"github.com/mauidude/go-readability"
+	"github.com/mariusor/go-readability"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +14,7 @@ func main() {
 		Short: "Readability is a CLI tool to extract content from an HTML page",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			content, err := ioutil.ReadFile(args[0])
+			content, err := os.ReadFile(args[0])
 			if err != nil {
 				return fmt.Errorf("unable to read file: %w", err)
 			}
