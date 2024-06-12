@@ -2,12 +2,15 @@ package readability
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"math"
+	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -536,6 +539,22 @@ func (d *Document) sanitize(article string) string {
 
 	addTitle(d.Title, doc)
 
+	// download images and embed them using base64 encoding
+	s.Find("img").Each(func(i int, s *goquery.Selection) {
+		node := s.Get(0)
+		if node.Type != html.ElementNode {
+			return
+		}
+
+		for i, attr := range node.Attr {
+			if attr.Key != "src" {
+				continue
+			}
+			attr.Val = fetchImageAsDataURL(attr.Val)
+			node.Attr[i] = attr
+		}
+	})
+
 	if text == "" {
 		text, _ = doc.Html()
 	}
@@ -742,4 +761,34 @@ func topLineMaybeIsTitle(s *goquery.Selection, t string) (bool, string) {
 		}
 	}
 	return false, ""
+}
+
+func fetchImageAsDataURL(uri string) string {
+	r, err := http.Get(uri)
+	if err != nil {
+		Logger.With(slog.String("uri", uri)).Warn("unable to fetch image")
+		return uri
+	}
+	if r.StatusCode != http.StatusOK {
+		Logger.With(slog.String("uri", uri), slog.Int("status_code", r.StatusCode)).Warn("unable to fetch image")
+		return uri
+	}
+	defer r.Body.Close()
+
+	contentType := r.Header.Get("Content-Type")
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		Logger.With(slog.String("uri", uri), slog.String("err", err.Error())).Warn("unable to read image data")
+		return uri
+	}
+	contentLength := int64(len(raw))
+	if cl := r.Header.Get("Content-Length"); len(cl) > 0 {
+		contentLength, _ = strconv.ParseInt(cl, 10, 64)
+	}
+	if len(raw) != int(contentLength) {
+		Logger.With(slog.String("uri", uri), slog.Int("blen", len(raw)), slog.Int64("Content-Length", contentLength)).Warn("unexpected byte length")
+	}
+	data := make([]byte, base64.URLEncoding.EncodedLen(len(raw)))
+	base64.StdEncoding.Encode(data, raw)
+	return fmt.Sprintf("data:%s;base64,%s", contentType, data)
 }
