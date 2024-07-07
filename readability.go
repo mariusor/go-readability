@@ -763,8 +763,10 @@ func topLineMaybeIsTitle(s *goquery.Selection, t string) (bool, string) {
 	return false, ""
 }
 
+var DefaultClient = &http.Client{}
+
 func fetchImageAsDataURL(uri string) string {
-	r, err := http.Get(uri)
+	r, err := DefaultClient.Get(uri)
 	if err != nil {
 		Logger.With(slog.String("uri", uri), slog.String("err", err.Error())).Warn("unable to fetch image")
 		return uri
