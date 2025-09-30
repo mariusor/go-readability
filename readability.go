@@ -268,7 +268,7 @@ func (d *Document) transformMisusedDivsIntoParagraphs() {
 	d.document.Find("header,footer,article,div").Each(func(i int, s *goquery.Selection) {
 		html, err := s.Html()
 		if err != nil {
-			Logger.With(slog.String("error", err.Error())).Warn("Unable to transform 'div' to 'p'")
+			Logger.With(slog.Any("err", err)).Warn("Unable to transform 'div' to 'p'")
 			return
 		}
 
@@ -395,7 +395,7 @@ func (d *Document) sanitize(article string) string {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(article))
 	d.Title = d.getTitle()
 	if err != nil {
-		Logger.With(slog.String("error", err.Error())).Warn("Unable to create document")
+		Logger.With(slog.Any("err", err)).Warn("Unable to create document")
 		return ""
 	}
 
@@ -766,7 +766,7 @@ var DefaultClient = &http.Client{}
 func fetchImageAsDataURL(uri string) string {
 	r, err := DefaultClient.Get(uri)
 	if err != nil {
-		Logger.With(slog.String("uri", uri), slog.String("err", err.Error())).Warn("unable to fetch image")
+		Logger.With(slog.String("uri", uri), slog.Any("err", err)).Warn("unable to fetch image")
 		return uri
 	}
 	if r.StatusCode != http.StatusOK {
@@ -778,7 +778,7 @@ func fetchImageAsDataURL(uri string) string {
 	contentType := r.Header.Get("Content-Type")
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
-		Logger.With(slog.String("uri", uri), slog.String("err", err.Error())).Warn("unable to read image data")
+		Logger.With(slog.String("uri", uri), slog.Any("err", err)).Warn("unable to read image data")
 		return uri
 	}
 	contentLength := int64(len(raw))
