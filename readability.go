@@ -18,9 +18,7 @@ import (
 )
 
 var (
-	Logger = slog.New(
-		slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}).WithGroup("[readability]"),
-	)
+	Logger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 
 	replaceBrsRegexp   = regexp.MustCompile(`(?i)(<br[^>]*>[ \n\r\t]*){2,}`)
 	replaceFontsRegexp = regexp.MustCompile(`(?i)<(\/?)\s*font[^>]*?>`)
